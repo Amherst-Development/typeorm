@@ -1,11 +1,10 @@
-import {ForeignKeyMetadata} from "../../metadata/ForeignKeyMetadata";
-import {TableForeignKeyOptions} from "../options/TableForeignKeyOptions";
+import { ForeignKeyMetadata } from "../../metadata/ForeignKeyMetadata";
+import { TableForeignKeyOptions } from "../options/TableForeignKeyOptions";
 
 /**
  * Foreign key from the database stored in this class.
  */
 export class TableForeignKey {
-
     // -------------------------------------------------------------------------
     // Public Properties
     // -------------------------------------------------------------------------
@@ -41,6 +40,11 @@ export class TableForeignKey {
      * referenced stuff is being updated.
      */
     onUpdate?: string;
+
+    /**
+     * Set to true to disable the check on constraint after creation.
+     */
+    noCheck?: boolean;
 
     /**
      * Set this foreign key constraint as "DEFERRABLE" e.g. check constraints at start
@@ -99,5 +103,4 @@ export class TableForeignKey {
             deferrable: metadata.deferrable,
         });
     }
-
 }
