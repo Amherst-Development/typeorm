@@ -1,7 +1,7 @@
 {
-  "name": "typeorm",
-  "private": true,
-  "version": "0.2.25",
+  "name": "typeorm-disable-constraint-option",
+  "private": false,
+  "version": "0.2.25.3",
   "description": "Data-Mapper ORM for TypeScript, ES7, ES6, ES5. Supports MySQL, PostgreSQL, MariaDB, SQLite, MS SQL Server, Oracle, MongoDB databases.",
   "license": "MIT",
   "readmeFilename": "README.md",
@@ -24,7 +24,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/typeorm/typeorm.git"
+    "url": "https://github.com/afriedrich-bh/typeorm.git"
   },
   "bugs": {
     "url": "https://github.com/typeorm/typeorm/issues"
@@ -91,7 +91,7 @@
     "sqlite3": "^4.0.9",
     "ts-node": "^8.0.2",
     "tslint": "^5.13.1",
-    "typeorm-aurora-data-api-driver": "^1.3.0",
+    "typeorm-aurora-data-api-driver": "^1.2.0",
     "typescript": "^3.3.3333"
   },
   "dependencies": {

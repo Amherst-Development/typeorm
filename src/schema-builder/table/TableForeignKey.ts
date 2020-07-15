@@ -1,11 +1,10 @@
-import {ForeignKeyMetadata} from "../../metadata/ForeignKeyMetadata";
-import {TableForeignKeyOptions} from "../options/TableForeignKeyOptions";
+import { ForeignKeyMetadata } from "../../metadata/ForeignKeyMetadata";
+import { TableForeignKeyOptions } from "../options/TableForeignKeyOptions";
 
 /**
  * Foreign key from the database stored in this class.
  */
 export class TableForeignKey {
-
     // -------------------------------------------------------------------------
     // Public Properties
     // -------------------------------------------------------------------------
@@ -99,5 +98,4 @@ export class TableForeignKey {
             deferrable: metadata.deferrable,
         });
     }
-
 }

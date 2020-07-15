@@ -1,12 +1,11 @@
-import {DeferrableType} from "../../metadata/types/DeferrableType";
-import {OnDeleteType} from "../../metadata/types/OnDeleteType";
-import {OnUpdateType} from "../../metadata/types/OnUpdateType";
+import { DeferrableType } from "../../metadata/types/DeferrableType";
+import { OnDeleteType } from "../../metadata/types/OnDeleteType";
+import { OnUpdateType } from "../../metadata/types/OnUpdateType";
 
 /**
  * Describes all relation's options.
  */
 export interface RelationOptions {
-
     /**
      * Sets cascades options for the given relation.
      * If set to true then it means that related object can be allowed to be inserted or updated in the database.
@@ -14,7 +13,9 @@ export interface RelationOptions {
      *
      * cascade: ["insert", "update", "remove", "soft-remove", "recover"] // include or exclude one of them
      */
-    cascade?: boolean|("insert"|"update"|"remove"|"soft-remove"|"recover")[];
+    cascade?:
+        | boolean
+        | ("insert" | "update" | "remove" | "soft-remove" | "recover")[];
 
     /**
      * Indicates if relation column value can be nullable or not.
@@ -63,5 +64,4 @@ export interface RelationOptions {
      * This is useful for performance optimization since its disabling avoid multiple extra queries during entity save.
      */
     persistence?: boolean;
-
 }
