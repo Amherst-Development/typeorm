@@ -757,7 +757,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             upQueries.push(
                 new Query(
                     `EXEC sp_rename "${this.escapePath(newTable, true)}.${
-                        unique.name
+                    unique.name
                     }", "${newUniqueName}"`
                 )
             );
@@ -787,7 +787,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             upQueries.push(
                 new Query(
                     `EXEC sp_rename "${this.escapePath(newTable, true)}.${
-                        index.name
+                    index.name
                     }", "${newIndexName}", "INDEX"`
                 )
             );
@@ -876,7 +876,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
         downQueries.push(
             new Query(
                 `ALTER TABLE ${this.escapePath(table)} DROP COLUMN "${
-                    column.name
+                column.name
                 }"`
             )
         );
@@ -957,14 +957,14 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             upQueries.push(
                 new Query(
                     `ALTER TABLE ${this.escapePath(table)} ADD CONSTRAINT "${
-                        uniqueConstraint.name
+                    uniqueConstraint.name
                     }" UNIQUE ("${column.name}")`
                 )
             );
             downQueries.push(
                 new Query(
                     `ALTER TABLE ${this.escapePath(table)} DROP CONSTRAINT "${
-                        uniqueConstraint.name
+                    uniqueConstraint.name
                     }"`
                 )
             );
@@ -1055,8 +1055,8 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             oldTableColumnOrName instanceof TableColumn
                 ? oldTableColumnOrName
                 : table.columns.find(
-                      (column) => column.name === oldTableColumnOrName
-                  );
+                    (column) => column.name === oldTableColumnOrName
+                );
         if (!oldColumn)
             throw new Error(
                 `Column "${oldTableColumnOrName}" was not found in the "${table.name}" table.`
@@ -1100,14 +1100,14 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                 upQueries.push(
                     new Query(
                         `EXEC sp_rename "${this.escapePath(table, true)}.${
-                            oldColumn.name
+                        oldColumn.name
                         }", "${newColumn.name}"`
                     )
                 );
                 downQueries.push(
                     new Query(
                         `EXEC sp_rename "${this.escapePath(table, true)}.${
-                            newColumn.name
+                        newColumn.name
                         }", "${oldColumn.name}"`
                     )
                 );
@@ -1326,7 +1326,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                             `ALTER TABLE ${this.escapePath(
                                 table
                             )} ADD CONSTRAINT "${oldDefaultName}" DEFAULT ${
-                                oldColumn.default
+                            oldColumn.default
                             } FOR "${newColumn.name}"`
                         )
                     );
@@ -1336,7 +1336,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                             `ALTER TABLE ${this.escapePath(
                                 table
                             )} ADD CONSTRAINT "${newDefaultName}" DEFAULT ${
-                                oldColumn.default
+                            oldColumn.default
                             } FOR "${newColumn.name}"`
                         )
                     );
@@ -1505,7 +1505,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                             `ALTER TABLE ${this.escapePath(
                                 table
                             )} ADD CONSTRAINT "${
-                                uniqueConstraint.name
+                            uniqueConstraint.name
                             }" UNIQUE ("${newColumn.name}")`
                         )
                     );
@@ -1544,7 +1544,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                             `ALTER TABLE ${this.escapePath(
                                 table
                             )} ADD CONSTRAINT "${
-                                uniqueConstraint!.name
+                            uniqueConstraint!.name
                             }" UNIQUE ("${newColumn.name}")`
                         )
                     );
@@ -1573,7 +1573,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                             `ALTER TABLE ${this.escapePath(
                                 table
                             )} ADD CONSTRAINT "${defaultName}" DEFAULT ${
-                                oldColumn.default
+                            oldColumn.default
                             } FOR "${oldColumn.name}"`
                         )
                     );
@@ -1592,7 +1592,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                             `ALTER TABLE ${this.escapePath(
                                 table
                             )} ADD CONSTRAINT "${defaultName}" DEFAULT ${
-                                newColumn.default
+                            newColumn.default
                             } FOR "${newColumn.name}"`
                         )
                     );
@@ -1771,7 +1771,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                     `ALTER TABLE ${this.escapePath(
                         table
                     )} ADD CONSTRAINT "${defaultName}" DEFAULT ${
-                        column.default
+                    column.default
                     } FOR "${column.name}"`
                 )
             );
@@ -1780,7 +1780,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
         upQueries.push(
             new Query(
                 `ALTER TABLE ${this.escapePath(table)} DROP COLUMN "${
-                    column.name
+                column.name
                 }"`
             )
         );
@@ -2358,7 +2358,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             try {
                 // we throw original error even if rollback thrown an error
                 await this.rollbackTransaction();
-            } catch (rollbackError) {}
+            } catch (rollbackError) { }
             throw error;
         }
     }
@@ -2439,7 +2439,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                         this.getTypeormMetadataTableName()
                     )} "t" ` +
                     `INNER JOIN "${dbName}"."INFORMATION_SCHEMA"."VIEWS" "V" ON "V"."TABLE_SCHEMA" = "T"."SCHEMA" AND "v"."TABLE_NAME" = "T"."NAME" WHERE "T"."TYPE" = 'VIEW' ${
-                        viewsCondition ? `AND (${viewsCondition})` : ""
+                    viewsCondition ? `AND (${viewsCondition})` : ""
                     }`
                 );
             })
@@ -2454,7 +2454,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                     : dbView["TABLE_CATALOG"];
             const schema =
                 dbView["schema"] === currentSchema &&
-                !this.driver.options.schema
+                    !this.driver.options.schema
                     ? undefined
                     : dbView["schema"];
             view.name = this.driver.buildTableName(dbView["name"], schema, db);
@@ -2645,7 +2645,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                         : dbTable["TABLE_CATALOG"];
                 const schema =
                     dbTable["TABLE_SCHEMA"] === currentSchema &&
-                    !this.driver.options.schema
+                        !this.driver.options.schema
                         ? undefined
                         : dbTable["TABLE_SCHEMA"];
                 table.name = this.driver.buildTableName(
@@ -2683,7 +2683,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                                         dbConstraint["CONSTRAINT_CATALOG"]
                                     ) === tableFullName &&
                                     dbConstraint["COLUMN_NAME"] ===
-                                        dbColumn["COLUMN_NAME"]
+                                    dbColumn["COLUMN_NAME"]
                                 );
                             }
                         );
@@ -2694,14 +2694,14 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                         );
                         const isConstraintComposite = uniqueConstraint
                             ? !!dbConstraints.find(
-                                  (dbConstraint) =>
-                                      dbConstraint["CONSTRAINT_TYPE"] ===
-                                          "UNIQUE" &&
-                                      dbConstraint["CONSTRAINT_NAME"] ===
-                                          uniqueConstraint["CONSTRAINT_NAME"] &&
-                                      dbConstraint["COLUMN_NAME"] !==
-                                          dbColumn["COLUMN_NAME"]
-                              )
+                                (dbConstraint) =>
+                                    dbConstraint["CONSTRAINT_TYPE"] ===
+                                    "UNIQUE" &&
+                                    dbConstraint["CONSTRAINT_NAME"] ===
+                                    uniqueConstraint["CONSTRAINT_NAME"] &&
+                                    dbConstraint["COLUMN_NAME"] !==
+                                    dbColumn["COLUMN_NAME"]
+                            )
                             : false;
 
                         const isPrimary = !!columnConstraints.find(
@@ -2717,7 +2717,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                                         column["TABLE_CATALOG"]
                                     ) === tableFullName &&
                                     column["COLUMN_NAME"] ===
-                                        dbColumn["COLUMN_NAME"]
+                                    dbColumn["COLUMN_NAME"]
                                 );
                             }
                         );
@@ -2783,10 +2783,10 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                             if (columnCheckConstraints.length) {
                                 const isEnumRegexp = new RegExp(
                                     "^\\(\\[" +
-                                        tableColumn.name +
-                                        "\\]='[^']+'(?: OR \\[" +
-                                        tableColumn.name +
-                                        "\\]='[^']+')*\\)$"
+                                    tableColumn.name +
+                                    "\\]='[^']+'(?: OR \\[" +
+                                    tableColumn.name +
+                                    "\\]='[^']+')*\\)$"
                                 );
                                 for (const checkConstraint of columnCheckConstraints) {
                                     if (
@@ -2799,8 +2799,8 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                                         tableColumn.enum = [];
                                         const enumValueRegexp = new RegExp(
                                             "\\[" +
-                                                tableColumn.name +
-                                                "\\]='([^']+)'",
+                                            tableColumn.name +
+                                            "\\]='([^']+)'",
                                             "g"
                                         );
                                         let result;
@@ -2820,10 +2820,10 @@ export class SqlServerQueryRunner extends BaseQueryRunner
 
                         tableColumn.default =
                             dbColumn["COLUMN_DEFAULT"] !== null &&
-                            dbColumn["COLUMN_DEFAULT"] !== undefined
+                                dbColumn["COLUMN_DEFAULT"] !== undefined
                                 ? this.removeParenthesisFromDefault(
-                                      dbColumn["COLUMN_DEFAULT"]
-                                  )
+                                    dbColumn["COLUMN_DEFAULT"]
+                                )
                                 : undefined;
                         tableColumn.isNullable =
                             dbColumn["IS_NULLABLE"] === "YES";
@@ -2833,18 +2833,18 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                         tableColumn.isGenerated = isGenerated;
                         if (isGenerated)
                             tableColumn.generationStrategy = "increment";
-                        if (tableColumn.default === "newsequentialid()") {
-                            tableColumn.isGenerated = true;
-                            tableColumn.generationStrategy = "uuid";
-                            tableColumn.default = undefined;
-                        }
+                        // if (tableColumn.default === "newsequentialid()") {
+                        //     tableColumn.isGenerated = true;
+                        //     tableColumn.generationStrategy = "uuid";
+                        //     tableColumn.default = undefined;
+                        // }
 
                         // todo: unable to get default charset
                         // tableColumn.charset = dbColumn["CHARACTER_SET_NAME"];
                         if (dbColumn["COLLATION_NAME"])
                             tableColumn.collation =
                                 dbColumn["COLLATION_NAME"] ===
-                                defaultCollation["COLLATION_NAME"]
+                                    defaultCollation["COLLATION_NAME"]
                                     ? undefined
                                     : dbColumn["COLLATION_NAME"];
 
@@ -2995,9 +2995,9 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                     const indices = dbIndices.filter((index) => {
                         return (
                             index["TABLE_CATALOG"] ===
-                                constraint["TABLE_CATALOG"] &&
+                            constraint["TABLE_CATALOG"] &&
                             index["TABLE_SCHEMA"] ===
-                                constraint["TABLE_SCHEMA"] &&
+                            constraint["TABLE_SCHEMA"] &&
                             index["TABLE_NAME"] === constraint["TABLE_NAME"] &&
                             index["INDEX_NAME"] === constraint["INDEX_NAME"]
                         );
@@ -3055,9 +3055,9 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                     const uniqueName = unique.name
                         ? unique.name
                         : this.connection.namingStrategy.uniqueConstraintName(
-                              table.name,
-                              unique.columnNames
-                          );
+                            table.name,
+                            unique.columnNames
+                        );
                     const columnNames = unique.columnNames
                         .map((columnName) => `"${columnName}"`)
                         .join(", ");
@@ -3074,9 +3074,9 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                     const checkName = check.name
                         ? check.name
                         : this.connection.namingStrategy.checkConstraintName(
-                              table.name,
-                              check.expression!
-                          );
+                            table.name,
+                            check.expression!
+                        );
                     return `CONSTRAINT "${checkName}" CHECK (${check.expression})`;
                 })
                 .join(", ");
@@ -3103,9 +3103,9 @@ export class SqlServerQueryRunner extends BaseQueryRunner
 
                     let constraint = `CONSTRAINT "${
                         fk.name
-                    }" FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(
-                        fk.referencedTableName
-                    )} (${referencedColumnNames})`;
+                        }" FOREIGN KEY (${columnNames}) REFERENCES ${this.escapePath(
+                            fk.referencedTableName
+                        )} (${referencedColumnNames})`;
                     if (fk.onDelete) constraint += ` ON DELETE ${fk.onDelete}`;
                     if (fk.onUpdate) constraint += ` ON UPDATE ${fk.onUpdate}`;
 
@@ -3229,9 +3229,9 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             .join(", ");
         return new Query(
             `CREATE ${index.isUnique ? "UNIQUE " : ""}INDEX "${
-                index.name
+            index.name
             }" ON ${this.escapePath(table)} (${columns}) ${
-                index.where ? "WHERE " + index.where : ""
+            index.where ? "WHERE " + index.where : ""
             }`
         );
     }
@@ -3296,7 +3296,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             .join(", ");
         return new Query(
             `ALTER TABLE ${this.escapePath(table)} ADD CONSTRAINT "${
-                uniqueConstraint.name
+            uniqueConstraint.name
             }" UNIQUE (${columnNames})`
         );
     }
@@ -3328,7 +3328,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
     ): Query {
         return new Query(
             `ALTER TABLE ${this.escapePath(table)} ADD CONSTRAINT "${
-                checkConstraint.name
+            checkConstraint.name
             }" CHECK (${checkConstraint.expression})`
         );
     }
@@ -3366,7 +3366,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             `ALTER TABLE ${this.escapePath(
                 table
             )} WITH NOCHECK ADD CONSTRAINT "${
-                foreignKey.name
+            foreignKey.name
             }" FOREIGN KEY (${columnNames}) ` +
             `REFERENCES ${this.escapePath(
                 foreignKey.referencedTableName
@@ -3375,7 +3375,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
         if (foreignKey.onUpdate) sql += ` ON UPDATE ${foreignKey.onUpdate}`;
         sql += ` ALTER TABLE ${this.escapePath(table)} NOCHECK CONSTRAINT ${
             foreignKey.name
-        }`;
+            }`;
         return new Query(sql);
     }
 
