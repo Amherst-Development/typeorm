@@ -1,23 +1,23 @@
-import {SapDriver} from "../driver/sap/SapDriver";
-import {QueryRunner} from "../query-runner/QueryRunner";
-import {Subject} from "./Subject";
-import {PromiseUtils} from "../util/PromiseUtils";
-import {SubjectTopoligicalSorter} from "./SubjectTopoligicalSorter";
-import {SubjectChangedColumnsComputer} from "./SubjectChangedColumnsComputer";
-import {SubjectWithoutIdentifierError} from "../error/SubjectWithoutIdentifierError";
-import {SubjectRemovedAndUpdatedError} from "../error/SubjectRemovedAndUpdatedError";
-import {MongoQueryRunner} from "../driver/mongodb/MongoQueryRunner";
-import {MongoEntityManager} from "../entity-manager/MongoEntityManager";
-import {MongoDriver} from "../driver/mongodb/MongoDriver";
-import {ObjectLiteral} from "../common/ObjectLiteral";
-import {SaveOptions} from "../repository/SaveOptions";
-import {RemoveOptions} from "../repository/RemoveOptions";
-import {BroadcasterResult} from "../subscriber/BroadcasterResult";
-import {OracleDriver} from "../driver/oracle/OracleDriver";
-import {NestedSetSubjectExecutor} from "./tree/NestedSetSubjectExecutor";
-import {ClosureSubjectExecutor} from "./tree/ClosureSubjectExecutor";
-import {MaterializedPathSubjectExecutor} from "./tree/MaterializedPathSubjectExecutor";
-import {OrmUtils} from "../util/OrmUtils";
+import { SapDriver } from "../driver/sap/SapDriver";
+import { QueryRunner } from "../query-runner/QueryRunner";
+import { Subject } from "./Subject";
+import { PromiseUtils } from "../util/PromiseUtils";
+import { SubjectTopoligicalSorter } from "./SubjectTopoligicalSorter";
+import { SubjectChangedColumnsComputer } from "./SubjectChangedColumnsComputer";
+import { SubjectWithoutIdentifierError } from "../error/SubjectWithoutIdentifierError";
+import { SubjectRemovedAndUpdatedError } from "../error/SubjectRemovedAndUpdatedError";
+import { MongoQueryRunner } from "../driver/mongodb/MongoQueryRunner";
+import { MongoEntityManager } from "../entity-manager/MongoEntityManager";
+import { MongoDriver } from "../driver/mongodb/MongoDriver";
+import { ObjectLiteral } from "../common/ObjectLiteral";
+import { SaveOptions } from "../repository/SaveOptions";
+import { RemoveOptions } from "../repository/RemoveOptions";
+import { BroadcasterResult } from "../subscriber/BroadcasterResult";
+import { OracleDriver } from "../driver/oracle/OracleDriver";
+import { NestedSetSubjectExecutor } from "./tree/NestedSetSubjectExecutor";
+import { ClosureSubjectExecutor } from "./tree/ClosureSubjectExecutor";
+import { MaterializedPathSubjectExecutor } from "./tree/MaterializedPathSubjectExecutor";
+import { OrmUtils } from "../util/OrmUtils";
 
 /**
  * Executes all database operations (inserts, updated, deletes) that must be executed
@@ -429,15 +429,19 @@ export class SubjectExecutor {
                 }
 
                 const updateResult = await updateQueryBuilder.execute();
-                subject.generatedMap = updateResult.generatedMaps[0];
-                if (subject.generatedMap) {
+                let updateGeneratedMap = updateResult.generatedMaps[0];
+                if (updateGeneratedMap) {
                     subject.metadata.columns.forEach(column => {
-                        const value = column.getEntityValue(subject.generatedMap!);
+                        const value = column.getEntityValue(updateGeneratedMap!);
                         if (value !== undefined && value !== null) {
                             const preparedValue = this.queryRunner.connection.driver.prepareHydratedValue(value, column);
-                            column.setEntityValue(subject.generatedMap!, preparedValue);
+                            column.setEntityValue(updateGeneratedMap!, preparedValue);
                         }
                     });
+                    if (!subject.generatedMap) {
+                        subject.generatedMap = {};
+                    }
+                    Object.assign(subject.generatedMap, updateGeneratedMap);
                 }
 
                 // experiments, remove probably, need to implement tree tables children removal
