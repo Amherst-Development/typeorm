@@ -1,27 +1,29 @@
-import { ObjectLiteral } from "../../common/ObjectLiteral";
-import { QueryFailedError } from "../../error/QueryFailedError";
-import { QueryRunnerAlreadyReleasedError } from "../../error/QueryRunnerAlreadyReleasedError";
-import { TransactionAlreadyStartedError } from "../../error/TransactionAlreadyStartedError";
-import { TransactionNotStartedError } from "../../error/TransactionNotStartedError";
-import { ColumnType, PromiseUtils } from "../../index";
-import { ReadStream } from "../../platform/PlatformTools";
-import { BaseQueryRunner } from "../../query-runner/BaseQueryRunner";
-import { QueryRunner } from "../../query-runner/QueryRunner";
-import { TableIndexOptions } from "../../schema-builder/options/TableIndexOptions";
-import { Table } from "../../schema-builder/table/Table";
-import { TableCheck } from "../../schema-builder/table/TableCheck";
-import { TableColumn } from "../../schema-builder/table/TableColumn";
-import { TableExclusion } from "../../schema-builder/table/TableExclusion";
-import { TableForeignKey } from "../../schema-builder/table/TableForeignKey";
-import { TableIndex } from "../../schema-builder/table/TableIndex";
-import { TableUnique } from "../../schema-builder/table/TableUnique";
-import { View } from "../../schema-builder/view/View";
-import { Broadcaster } from "../../subscriber/Broadcaster";
-import { OrmUtils } from "../../util/OrmUtils";
-import { Query } from "../Query";
-import { IsolationLevel } from "../types/IsolationLevel";
-import { MssqlParameter } from "./MssqlParameter";
-import { SqlServerDriver } from "./SqlServerDriver";
+import {ObjectLiteral} from "../../common/ObjectLiteral";
+import {QueryFailedError} from "../../error/QueryFailedError";
+import {QueryRunnerAlreadyReleasedError} from "../../error/QueryRunnerAlreadyReleasedError";
+import {TransactionAlreadyStartedError} from "../../error/TransactionAlreadyStartedError";
+import {TransactionNotStartedError} from "../../error/TransactionNotStartedError";
+import {ColumnType} from "../../index";
+import {ReadStream} from "../../platform/PlatformTools";
+import {BaseQueryRunner} from "../../query-runner/BaseQueryRunner";
+import {QueryRunner} from "../../query-runner/QueryRunner";
+import {TableIndexOptions} from "../../schema-builder/options/TableIndexOptions";
+import {Table} from "../../schema-builder/table/Table";
+import {TableCheck} from "../../schema-builder/table/TableCheck";
+import {TableColumn} from "../../schema-builder/table/TableColumn";
+import {TableExclusion} from "../../schema-builder/table/TableExclusion";
+import {TableForeignKey} from "../../schema-builder/table/TableForeignKey";
+import {TableIndex} from "../../schema-builder/table/TableIndex";
+import {TableUnique} from "../../schema-builder/table/TableUnique";
+import {View} from "../../schema-builder/view/View";
+import {Broadcaster} from "../../subscriber/Broadcaster";
+import {OrmUtils} from "../../util/OrmUtils";
+import {Query} from "../Query";
+import {IsolationLevel} from "../types/IsolationLevel";
+import {MssqlParameter} from "./MssqlParameter";
+import {SqlServerDriver} from "./SqlServerDriver";
+import {ReplicationMode} from "../types/ReplicationMode";
+import {BroadcasterResult} from "../../subscriber/BroadcasterResult";
 
 /**
  * Runs queries on a single SQL Server database connection.
@@ -54,7 +56,7 @@ export class SqlServerQueryRunner extends BaseQueryRunner
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(driver: SqlServerDriver, mode: "master" | "slave" = "master") {
+    constructor(driver: SqlServerDriver, mode: ReplicationMode) {
         super();
         this.driver = driver;
         this.connection = driver.connection;
@@ -92,6 +94,10 @@ export class SqlServerQueryRunner extends BaseQueryRunner
         if (this.isTransactionActive)
             throw new TransactionAlreadyStartedError();
 
+        const beforeBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastBeforeTransactionStartEvent(beforeBroadcastResult);
+        if (beforeBroadcastResult.promises.length > 0) await Promise.all(beforeBroadcastResult.promises);
+
         return new Promise<void>(async (ok, fail) => {
             this.isTransactionActive = true;
 
@@ -122,6 +128,10 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             } else {
                 this.databaseConnection.begin(transactionCallback);
             }
+
+            const afterBroadcastResult = new BroadcasterResult();
+            this.broadcaster.broadcastAfterTransactionStartEvent(afterBroadcastResult);
+            if (afterBroadcastResult.promises.length > 0) await Promise.all(afterBroadcastResult.promises);
         });
     }
 
@@ -134,11 +144,20 @@ export class SqlServerQueryRunner extends BaseQueryRunner
 
         if (!this.isTransactionActive) throw new TransactionNotStartedError();
 
+        const beforeBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastBeforeTransactionCommitEvent(beforeBroadcastResult);
+        if (beforeBroadcastResult.promises.length > 0) await Promise.all(beforeBroadcastResult.promises);
+
         return new Promise<void>((ok, fail) => {
-            this.databaseConnection.commit((err: any) => {
+            this.databaseConnection.commit(async (err: any) => {
                 if (err) return fail(err);
                 this.isTransactionActive = false;
                 this.databaseConnection = null;
+
+                const afterBroadcastResult = new BroadcasterResult();
+                this.broadcaster.broadcastAfterTransactionCommitEvent(afterBroadcastResult);
+                if (afterBroadcastResult.promises.length > 0) await Promise.all(afterBroadcastResult.promises);
+
                 ok();
                 this.connection.logger.logQuery("COMMIT");
             });
@@ -154,11 +173,20 @@ export class SqlServerQueryRunner extends BaseQueryRunner
 
         if (!this.isTransactionActive) throw new TransactionNotStartedError();
 
-        return new Promise<void>((ok, fail) => {
-            this.databaseConnection.rollback((err: any) => {
+        const beforeBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastBeforeTransactionRollbackEvent(beforeBroadcastResult);
+        if (beforeBroadcastResult.promises.length > 0) await Promise.all(beforeBroadcastResult.promises);
+
+        return new Promise<void>( (ok, fail) => {
+            this.databaseConnection.rollback(async (err: any) => {
                 if (err) return fail(err);
                 this.isTransactionActive = false;
                 this.databaseConnection = null;
+
+                const afterBroadcastResult = new BroadcasterResult();
+                this.broadcaster.broadcastAfterTransactionRollbackEvent(afterBroadcastResult);
+                if (afterBroadcastResult.promises.length > 0) await Promise.all(afterBroadcastResult.promises);
+
                 ok();
                 this.connection.logger.logQuery("ROLLBACK");
             });
@@ -994,13 +1022,10 @@ export class SqlServerQueryRunner extends BaseQueryRunner
     /**
      * Creates a new columns from the column in the table.
      */
-    async addColumns(
-        tableOrName: Table | string,
-        columns: TableColumn[]
-    ): Promise<void> {
-        await PromiseUtils.runInSequence(columns, (column) =>
-            this.addColumn(tableOrName, column)
-        );
+    async addColumns(tableOrName: Table|string, columns: TableColumn[]): Promise<void> {
+        for (const column of columns) {
+            await this.addColumn(tableOrName, column);
+        }
     }
 
     /**
@@ -1614,17 +1639,10 @@ export class SqlServerQueryRunner extends BaseQueryRunner
     /**
      * Changes a column in the table.
      */
-    async changeColumns(
-        tableOrName: Table | string,
-        changedColumns: { newColumn: TableColumn; oldColumn: TableColumn }[]
-    ): Promise<void> {
-        await PromiseUtils.runInSequence(changedColumns, (changedColumn) =>
-            this.changeColumn(
-                tableOrName,
-                changedColumn.oldColumn,
-                changedColumn.newColumn
-            )
-        );
+    async changeColumns(tableOrName: Table|string, changedColumns: { newColumn: TableColumn, oldColumn: TableColumn }[]): Promise<void> {
+        for (const {oldColumn, newColumn} of changedColumns) {
+            await this.changeColumn(tableOrName, oldColumn, newColumn);
+        }
     }
 
     /**
@@ -1806,13 +1824,10 @@ export class SqlServerQueryRunner extends BaseQueryRunner
     /**
      * Drops the columns in the table.
      */
-    async dropColumns(
-        tableOrName: Table | string,
-        columns: TableColumn[]
-    ): Promise<void> {
-        await PromiseUtils.runInSequence(columns, (column) =>
-            this.dropColumn(tableOrName, column)
-        );
+    async dropColumns(tableOrName: Table|string, columns: TableColumn[]): Promise<void> {
+        for (const column of columns) {
+            await this.dropColumn(tableOrName, column);
+        }
     }
 
     /**

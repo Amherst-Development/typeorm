@@ -16,6 +16,7 @@ import {AuroraDataApiConnectionCredentialsOptions} from "./AuroraDataApiConnecti
 import {EntityMetadata} from "../../metadata/EntityMetadata";
 import {OrmUtils} from "../../util/OrmUtils";
 import {ApplyValueTransformers} from "../../util/ApplyValueTransformers";
+import {ReplicationMode} from "../types/ReplicationMode";
 
 /**
  * Organizes communication with MySQL DBMS.
@@ -31,8 +32,6 @@ export class AuroraDataApiDriver implements Driver {
      * Aurora Data API underlying library.
      */
     DataApiDriver: any;
-
-    client: any;
 
     /**
      * Connection pool.
@@ -300,15 +299,6 @@ export class AuroraDataApiDriver implements Driver {
         // load mysql package
         this.loadDependencies();
 
-        this.client = new this.DataApiDriver(
-            this.options.region,
-            this.options.secretArn,
-            this.options.resourceArn,
-            this.options.database,
-            (query: string, parameters?: any[]) => this.connection.logger.logQuery(query, parameters),
-            this.options.serviceConfigOptions
-        );
-
         // validate options to make sure everything is set
         // todo: revisit validation with replication in mind
         // if (!(this.options.host || (this.options.extra && this.options.extra.socketPath)) && !this.options.socketPath)
@@ -354,8 +344,16 @@ export class AuroraDataApiDriver implements Driver {
     /**
      * Creates a query runner used to execute database queries.
      */
-    createQueryRunner(mode: "master"|"slave" = "master") {
-        return new AuroraDataApiQueryRunner(this);
+    createQueryRunner(mode: ReplicationMode) {
+        return new AuroraDataApiQueryRunner(this, new this.DataApiDriver(
+            this.options.region,
+            this.options.secretArn,
+            this.options.resourceArn,
+            this.options.database,
+            (query: string, parameters?: any[]) => this.connection.logger.logQuery(query, parameters),
+            this.options.serviceConfigOptions,
+            this.options.formatOptions,
+        ));
     }
 
     /**
@@ -747,6 +745,13 @@ export class AuroraDataApiDriver implements Driver {
      */
     isUUIDGenerationSupported(): boolean {
         return false;
+    }
+
+    /**
+     * Returns true if driver supports fulltext indices.
+     */
+    isFullTextColumnTypeSupported(): boolean {
+        return true;
     }
 
     /**

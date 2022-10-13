@@ -1,4 +1,3 @@
-import {PromiseUtils} from "../../";
 import {ObjectLiteral} from "../../common/ObjectLiteral";
 import {QueryFailedError} from "../../error/QueryFailedError";
 import {QueryRunnerAlreadyReleasedError} from "../../error/QueryRunnerAlreadyReleasedError";
@@ -22,6 +21,8 @@ import {OrmUtils} from "../../util/OrmUtils";
 import {Query} from "../Query";
 import {IsolationLevel} from "../types/IsolationLevel";
 import {PostgresDriver} from "./PostgresDriver";
+import {ReplicationMode} from "../types/ReplicationMode";
+import {BroadcasterResult} from "../../subscriber/BroadcasterResult";
 
 /**
  * Runs queries on a single postgres database connection.
@@ -55,7 +56,7 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
     // Constructor
     // -------------------------------------------------------------------------
 
-    constructor(driver: PostgresDriver, mode: "master"|"slave" = "master") {
+    constructor(driver: PostgresDriver, mode: ReplicationMode) {
         super();
         this.driver = driver;
         this.connection = driver.connection;
@@ -79,10 +80,17 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             return this.databaseConnectionPromise;
 
         if (this.mode === "slave" && this.driver.isReplicated)  {
-            this.databaseConnectionPromise = this.driver.obtainSlaveConnection().then(([ connection, release]: any[]) => {
+            this.databaseConnectionPromise = this.driver.obtainSlaveConnection().then(([connection, release]: any[]) => {
                 this.driver.connectedQueryRunners.push(this);
                 this.databaseConnection = connection;
-                this.releaseCallback = release;
+
+                const onErrorCallback = () => this.release();
+                this.releaseCallback = () => {
+                    this.databaseConnection.removeListener("error", onErrorCallback);
+                    release();
+                };
+                this.databaseConnection.on("error", onErrorCallback);
+
                 return this.databaseConnection;
             });
 
@@ -90,7 +98,14 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             this.databaseConnectionPromise = this.driver.obtainMasterConnection().then(([connection, release]: any[]) => {
                 this.driver.connectedQueryRunners.push(this);
                 this.databaseConnection = connection;
-                this.releaseCallback = release;
+
+                const onErrorCallback = () => this.release();
+                this.releaseCallback = () => {
+                    this.databaseConnection.removeListener("error", onErrorCallback);
+                    release();
+                };
+                this.databaseConnection.on("error", onErrorCallback);
+
                 return this.databaseConnection;
             });
         }
@@ -103,6 +118,10 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * You cannot use query runner methods once its released.
      */
     release(): Promise<void> {
+        if (this.isReleased) {
+            return Promise.resolve();
+        }
+
         this.isReleased = true;
         if (this.releaseCallback)
             this.releaseCallback();
@@ -120,11 +139,19 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
         if (this.isTransactionActive)
             throw new TransactionAlreadyStartedError();
 
+        const beforeBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastBeforeTransactionStartEvent(beforeBroadcastResult);
+        if (beforeBroadcastResult.promises.length > 0) await Promise.all(beforeBroadcastResult.promises);
+
         this.isTransactionActive = true;
         await this.query("START TRANSACTION");
         if (isolationLevel) {
             await this.query("SET TRANSACTION ISOLATION LEVEL " + isolationLevel);
         }
+
+        const afterBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastAfterTransactionStartEvent(afterBroadcastResult);
+        if (afterBroadcastResult.promises.length > 0) await Promise.all(afterBroadcastResult.promises);
     }
 
     /**
@@ -135,8 +162,16 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
         if (!this.isTransactionActive)
             throw new TransactionNotStartedError();
 
+        const beforeBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastBeforeTransactionCommitEvent(beforeBroadcastResult);
+        if (beforeBroadcastResult.promises.length > 0) await Promise.all(beforeBroadcastResult.promises);
+
         await this.query("COMMIT");
         this.isTransactionActive = false;
+
+        const afterBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastAfterTransactionCommitEvent(afterBroadcastResult);
+        if (afterBroadcastResult.promises.length > 0) await Promise.all(afterBroadcastResult.promises);
     }
 
     /**
@@ -147,52 +182,51 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
         if (!this.isTransactionActive)
             throw new TransactionNotStartedError();
 
+        const beforeBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastBeforeTransactionRollbackEvent(beforeBroadcastResult);
+        if (beforeBroadcastResult.promises.length > 0) await Promise.all(beforeBroadcastResult.promises);
+
         await this.query("ROLLBACK");
         this.isTransactionActive = false;
+
+        const afterBroadcastResult = new BroadcasterResult();
+        this.broadcaster.broadcastAfterTransactionRollbackEvent(afterBroadcastResult);
+        if (afterBroadcastResult.promises.length > 0) await Promise.all(afterBroadcastResult.promises);
     }
 
     /**
      * Executes a given SQL query.
      */
-    query(query: string, parameters?: any[]): Promise<any> {
+    async query(query: string, parameters?: any[]): Promise<any> {
         if (this.isReleased)
             throw new QueryRunnerAlreadyReleasedError();
 
-        return new Promise<any[]>(async (ok, fail) => {
-            try {
-                const databaseConnection = await this.connect();
-                this.driver.connection.logger.logQuery(query, parameters, this);
-                const queryStartTime = +new Date();
+        const databaseConnection = await this.connect();
 
-                databaseConnection.query(query, parameters, (err: any, result: any) => {
+        this.driver.connection.logger.logQuery(query, parameters, this);
+        try {
+            const queryStartTime = +new Date();
+            const result = await databaseConnection.query(query, parameters);
+            // log slow queries if maxQueryExecution time is set
+            const maxQueryExecutionTime = this.driver.connection.options.maxQueryExecutionTime;
+            const queryEndTime = +new Date();
+            const queryExecutionTime = queryEndTime - queryStartTime;
+            if (maxQueryExecutionTime && queryExecutionTime > maxQueryExecutionTime)
+                this.driver.connection.logger.logQuerySlow(queryExecutionTime, query, parameters, this);
 
-                    // log slow queries if maxQueryExecution time is set
-                    const maxQueryExecutionTime = this.driver.connection.options.maxQueryExecutionTime;
-                    const queryEndTime = +new Date();
-                    const queryExecutionTime = queryEndTime - queryStartTime;
-                    if (maxQueryExecutionTime && queryExecutionTime > maxQueryExecutionTime)
-                        this.driver.connection.logger.logQuerySlow(queryExecutionTime, query, parameters, this);
-
-                    if (err) {
-                        this.driver.connection.logger.logQueryError(err, query, parameters, this);
-                        fail(new QueryFailedError(query, parameters, err));
-                    } else {
-                        switch (result.command) {
-                            case "DELETE":
-                            case "UPDATE":
-                                // for UPDATE and DELETE query additionally return number of affected rows
-                                ok([result.rows, result.rowCount]);
-                                break;
-                            default:
-                                ok(result.rows);
-                        }
-                    }
-                });
-
-            } catch (err) {
-                fail(err);
+            switch (result.command) {
+                case "DELETE":
+                case "UPDATE":
+                    // for UPDATE and DELETE query additionally return number of affected rows
+                    return [result.rows, result.rowCount];
+                    break;
+                default:
+                    return result.rows;
             }
-        });
+        } catch (err) {
+            this.driver.connection.logger.logQueryError(err, query, parameters, this);
+            throw new QueryFailedError(query, parameters, err);
+        }
     }
 
     /**
@@ -546,6 +580,12 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             downQueries.push(new Query(`ALTER TABLE ${this.escapePath(table)} DROP CONSTRAINT "${uniqueConstraint.name}"`));
         }
 
+        // create column's comment
+        if (column.comment) {
+            upQueries.push(new Query(`COMMENT ON COLUMN ${this.escapePath(table)}."${column.name}" IS ${this.escapeComment(column.comment)}`));
+            downQueries.push(new Query(`COMMENT ON COLUMN ${this.escapePath(table)}."${column.name}" IS ${this.escapeComment(column.comment)}`));
+        }
+
         await this.executeQueries(upQueries, downQueries);
 
         clonedTable.addColumn(column);
@@ -556,7 +596,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Creates a new columns from the column in the table.
      */
     async addColumns(tableOrName: Table|string, columns: TableColumn[]): Promise<void> {
-        await PromiseUtils.runInSequence(columns, column => this.addColumn(tableOrName, column));
+        for (const column of columns) {
+            await this.addColumn(tableOrName, column);
+        }
     }
 
     /**
@@ -763,8 +805,8 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             }
 
             if (oldColumn.comment !== newColumn.comment) {
-                upQueries.push(new Query(`COMMENT ON COLUMN ${this.escapePath(table)}."${oldColumn.name}" IS '${newColumn.comment}'`));
-                downQueries.push(new Query(`COMMENT ON COLUMN ${this.escapePath(table)}."${newColumn.name}" IS '${oldColumn.comment}'`));
+                upQueries.push(new Query(`COMMENT ON COLUMN ${this.escapePath(table)}."${oldColumn.name}" IS ${this.escapeComment(newColumn.comment)}`));
+                downQueries.push(new Query(`COMMENT ON COLUMN ${this.escapePath(table)}."${newColumn.name}" IS ${this.escapeComment(oldColumn.comment)}`));
             }
 
             if (newColumn.isPrimary !== oldColumn.isPrimary) {
@@ -874,7 +916,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Changes a column in the table.
      */
     async changeColumns(tableOrName: Table|string, changedColumns: { newColumn: TableColumn, oldColumn: TableColumn }[]): Promise<void> {
-        await PromiseUtils.runInSequence(changedColumns, changedColumn => this.changeColumn(tableOrName, changedColumn.oldColumn, changedColumn.newColumn));
+        for (const {oldColumn, newColumn} of changedColumns) {
+            await this.changeColumn(tableOrName, oldColumn, newColumn);
+        }
     }
 
     /**
@@ -958,7 +1002,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Drops the columns in the table.
      */
     async dropColumns(tableOrName: Table|string, columns: TableColumn[]): Promise<void> {
-        await PromiseUtils.runInSequence(columns, column => this.dropColumn(tableOrName, column));
+        for (const column of columns) {
+            await this.dropColumn(tableOrName, column);
+        }
     }
 
     /**
@@ -1047,7 +1093,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Creates new unique constraints.
      */
     async createUniqueConstraints(tableOrName: Table|string, uniqueConstraints: TableUnique[]): Promise<void> {
-        await PromiseUtils.runInSequence(uniqueConstraints, uniqueConstraint => this.createUniqueConstraint(tableOrName, uniqueConstraint));
+        for (const uniqueConstraint of uniqueConstraints) {
+            await this.createUniqueConstraint(tableOrName, uniqueConstraint);
+        }
     }
 
     /**
@@ -1069,7 +1117,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Drops unique constraints.
      */
     async dropUniqueConstraints(tableOrName: Table|string, uniqueConstraints: TableUnique[]): Promise<void> {
-        await PromiseUtils.runInSequence(uniqueConstraints, uniqueConstraint => this.dropUniqueConstraint(tableOrName, uniqueConstraint));
+        for (const uniqueConstraint of uniqueConstraints) {
+            await this.dropUniqueConstraint(tableOrName, uniqueConstraint);
+        }
     }
 
     /**
@@ -1186,7 +1236,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Creates a new foreign keys.
      */
     async createForeignKeys(tableOrName: Table|string, foreignKeys: TableForeignKey[]): Promise<void> {
-        await PromiseUtils.runInSequence(foreignKeys, foreignKey => this.createForeignKey(tableOrName, foreignKey));
+        for (const foreignKey of foreignKeys) {
+            await this.createForeignKey(tableOrName, foreignKey);
+        }
     }
 
     /**
@@ -1208,7 +1260,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Drops a foreign keys from the table.
      */
     async dropForeignKeys(tableOrName: Table|string, foreignKeys: TableForeignKey[]): Promise<void> {
-        await PromiseUtils.runInSequence(foreignKeys, foreignKey => this.dropForeignKey(tableOrName, foreignKey));
+        for (const foreignKey of foreignKeys) {
+            await this.dropForeignKey(tableOrName, foreignKey);
+        }
     }
 
     /**
@@ -1231,7 +1285,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Creates a new indices
      */
     async createIndices(tableOrName: Table|string, indices: TableIndex[]): Promise<void> {
-        await PromiseUtils.runInSequence(indices, index => this.createIndex(tableOrName, index));
+        for (const index of indices) {
+            await this.createIndex(tableOrName, index);
+        }
     }
 
     /**
@@ -1253,7 +1309,9 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
      * Drops an indices from the table.
      */
     async dropIndices(tableOrName: Table|string, indices: TableIndex[]): Promise<void> {
-        await PromiseUtils.runInSequence(indices, index => this.dropIndex(tableOrName, index));
+        for (const index of indices) {
+            await this.dropIndex(tableOrName, index);
+        }
     }
 
     /**
@@ -1359,7 +1417,30 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             return `("table_schema" = '${schema}' AND "table_name" = '${name}')`;
         }).join(" OR ");
         const tablesSql = `SELECT * FROM "information_schema"."tables" WHERE ` + tablesCondition;
-        const columnsSql = `SELECT *, ('"' || "udt_schema" || '"."' || "udt_name" || '"')::"regtype" AS "regtype" FROM "information_schema"."columns" WHERE ` + tablesCondition;
+        
+        /**
+         * Uses standard SQL information_schema.columns table and postgres-specific 
+         * pg_catalog.pg_attribute table to get column information.
+         * @see https://stackoverflow.com/a/19541865
+         */
+        const columnsSql = `
+            SELECT columns.*,
+              pg_catalog.col_description(('"' || table_catalog || '"."' || table_schema || '"."' || table_name || '"')::regclass::oid, ordinal_position) AS description,
+              ('"' || "udt_schema" || '"."' || "udt_name" || '"')::"regtype" AS "regtype",
+              pg_catalog.format_type("col_attr"."atttypid", "col_attr"."atttypmod") AS "format_type"
+              FROM "information_schema"."columns"
+              LEFT JOIN "pg_catalog"."pg_attribute" AS "col_attr"
+              ON "col_attr"."attname" = "columns"."column_name"
+              AND "col_attr"."attrelid" = (
+                SELECT
+                  "cls"."oid" FROM "pg_catalog"."pg_class" AS "cls"
+                  LEFT JOIN "pg_catalog"."pg_namespace" AS "ns"
+                  ON "ns"."oid" = "cls"."relnamespace"
+                WHERE "cls"."relname" = "columns"."table_name"
+                AND "ns"."nspname" = "columns"."table_schema"
+              )
+            WHERE
+            ` + tablesCondition;
 
         const constraintsCondition = tableNames.map(tableName => {
             let [schema, name] = tableName.split(".");
@@ -1377,7 +1458,7 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             `INNER JOIN "pg_class" "t" ON "t"."oid" = "cnst"."conrelid" ` +
             `INNER JOIN "pg_namespace" "ns" ON "ns"."oid" = "cnst"."connamespace" ` +
             `LEFT JOIN "pg_attribute" "a" ON "a"."attrelid" = "cnst"."conrelid" AND "a"."attnum" = ANY ("cnst"."conkey") ` +
-            `WHERE "t"."relkind" = 'r' AND (${constraintsCondition})`;
+            `WHERE "t"."relkind" IN ('r', 'p') AND (${constraintsCondition})`;
 
         const indicesSql = `SELECT "ns"."nspname" AS "table_schema", "t"."relname" AS "table_name", "i"."relname" AS "constraint_name", "a"."attname" AS "column_name", ` +
             `CASE "ix"."indisunique" WHEN 't' THEN 'TRUE' ELSE'FALSE' END AS "is_unique", pg_get_expr("ix"."indpred", "ix"."indrelid") AS "condition", ` +
@@ -1389,7 +1470,7 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             `INNER JOIN "pg_class" "i" ON "i"."oid" = "ix"."indexrelid" ` +
             `INNER JOIN "pg_type" "types" ON "types"."oid" = "a"."atttypid" ` +
             `LEFT JOIN "pg_constraint" "cnst" ON "cnst"."conname" = "i"."relname" ` +
-            `WHERE "t"."relkind" = 'r' AND "cnst"."contype" IS NULL AND (${constraintsCondition})`;
+            `WHERE "t"."relkind" IN ('r', 'p') AND "cnst"."contype" IS NULL AND (${constraintsCondition})`;
 
         const foreignKeysCondition = tableNames.map(tableName => {
             let [schema, name] = tableName.split(".");
@@ -1399,6 +1480,10 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             }
             return `("ns"."nspname" = '${schema}' AND "cl"."relname" = '${name}')`;
         }).join(" OR ");
+
+        const hasRelispartitionColumn = await this.hasSupportForPartitionedTables();
+        const isPartitionCondition = hasRelispartitionColumn ? ` AND "cl"."relispartition" = 'f'` : "";
+
         const foreignKeysSql = `SELECT "con"."conname" AS "constraint_name", "con"."nspname" AS "table_schema", "con"."relname" AS "table_name", "att2"."attname" AS "column_name", ` +
             `"ns"."nspname" AS "referenced_table_schema", "cl"."relname" AS "referenced_table_name", "att"."attname" AS "referenced_column_name", "con"."confdeltype" AS "on_delete", ` +
             `"con"."confupdtype" AS "on_update", "con"."condeferrable" AS "deferrable", "con"."condeferred" AS "deferred" ` +
@@ -1414,7 +1499,7 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             `WHERE "con1"."contype" = 'f' AND (${foreignKeysCondition}) ` +
             `) "con" ` +
             `INNER JOIN "pg_attribute" "att" ON "att"."attrelid" = "con"."confrelid" AND "att"."attnum" = "con"."child" ` +
-            `INNER JOIN "pg_class" "cl" ON "cl"."oid" = "con"."confrelid" ` +
+            `INNER JOIN "pg_class" "cl" ON "cl"."oid" = "con"."confrelid" ${isPartitionCondition}` +
             `INNER JOIN "pg_namespace" "ns" ON "cl"."relnamespace" = "ns"."oid" ` +
             `INNER JOIN "pg_attribute" "att2" ON "att2"."attrelid" = "con"."conrelid" AND "att2"."attnum" = "con"."parent"`;
         const [dbTables, dbColumns, dbConstraints, dbIndices, dbForeignKeys]: ObjectLiteral[][] = await Promise.all([
@@ -1526,9 +1611,17 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
                     }
 
                     // check only columns that have length property
-                    if (this.driver.withLengthColumnTypes.indexOf(tableColumn.type as ColumnType) !== -1 && dbColumn["character_maximum_length"]) {
-                        const length = dbColumn["character_maximum_length"].toString();
+                    if (this.driver.withLengthColumnTypes.indexOf(tableColumn.type as ColumnType) !== -1) {
+                      let length;
+                      if (tableColumn.isArray) {
+                        const match = /\((\d+)\)/.exec(dbColumn["format_type"]);
+                        length = match ? match[1] : undefined;
+                      } else if (dbColumn["character_maximum_length"]) {
+                        length = dbColumn["character_maximum_length"].toString();
+                      }
+                      if (length) {
                         tableColumn.length = !this.isDefaultColumnLength(table, tableColumn, length) ? length : "";
+                      }
                     }
                     tableColumn.isNullable = dbColumn["is_nullable"] === "YES";
                     tableColumn.isPrimary = !!columnConstraints.find(constraint => constraint["constraint_type"] === "PRIMARY");
@@ -1550,10 +1643,11 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
                             tableColumn.generationStrategy = "uuid";
                         } else {
                             tableColumn.default = dbColumn["column_default"].replace(/::.*/, "");
+                            tableColumn.default = tableColumn.default.replace(/^(-?\d+)$/, "'$1'");
                         }
                     }
 
-                    tableColumn.comment = ""; // dbColumn["COLUMN_COMMENT"];
+                    tableColumn.comment = dbColumn["description"] == null ? undefined : dbColumn["description"];
                     if (dbColumn["character_set_name"])
                         tableColumn.charset = dbColumn["character_set_name"];
                     if (dbColumn["collation_name"])
@@ -1727,6 +1821,10 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
         }
 
         sql += `)`;
+
+        table.columns
+            .filter(it => it.comment)
+            .forEach(it => sql += `; COMMENT ON COLUMN ${this.escapePath(table)}."${it.name}" IS ${this.escapeComment(it.comment)}`);
 
         return new Query(sql);
     }
@@ -1977,11 +2075,14 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             tableName = table.name.split(".")[1];
         }
 
+        let seqName = `${tableName}_${columnName}_seq`;
+        if (seqName.length > this.connection.driver.maxAliasLength!) // note doesn't yet handle corner cases where .length differs from number of UTF-8 bytes
+            seqName=`${tableName.substring(0,29)}_${columnName.substring(0,Math.max(29,63-tableName.length-5))}_seq`;
+        
         if (schema && schema !== currentSchema && !skipSchema) {
-            return disableEscape ? `${schema}.${tableName}_${columnName}_seq` : `"${schema}"."${tableName}_${columnName}_seq"`;
-
+            return disableEscape ? `${schema}.${seqName}` : `"${schema}"."${seqName}"`;
         } else {
-            return disableEscape ? `${tableName}_${columnName}_seq` : `"${tableName}_${columnName}_seq"`;
+            return disableEscape ? `${seqName}` : `"${seqName}"`;
         }
     }
 
@@ -2023,6 +2124,21 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
             enumTypeSchema: result[0]["udt_schema"],
             enumTypeName: result[0]["udt_name"]
         };
+    }
+
+    /**
+     * Escapes a given comment so it's safe to include in a query.
+     */
+    protected escapeComment(comment?: string) {
+        if (comment === undefined || comment.length === 0) {
+            return "NULL";
+        }
+
+        comment = comment
+            .replace("'", "''")
+            .replace("\0", ""); // Null bytes aren't allowed in comments
+
+        return `'${comment}'`;
     }
 
     /**
@@ -2090,4 +2206,11 @@ export class PostgresQueryRunner extends BaseQueryRunner implements QueryRunner 
         return c;
     }
 
+    /**
+     * Checks if the PostgreSQL server has support for partitioned tables
+     */
+    protected async hasSupportForPartitionedTables() {
+        const result = await this.query(`SELECT TRUE FROM information_schema.columns WHERE table_name = 'pg_class' and column_name = 'relispartition'`);
+        return result.length ? true : false;
+    }
 }
