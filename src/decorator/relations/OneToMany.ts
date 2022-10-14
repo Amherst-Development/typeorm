@@ -2,10 +2,10 @@ import {getMetadataArgsStorage, ObjectType, RelationOptions} from "../../";
 import {RelationMetadataArgs} from "../../metadata-args/RelationMetadataArgs";
 
 /**
- * One-to-many relation allows to create type of relation when Entity2 can have multiple instances of Entity1.
- * Entity1 have only one Entity2. Entity1 is an owner of the relationship, and storages Entity2 id on its own side.
+ * One-to-many relation allows us to create a type of relation where Entity1 can have multiple instances of Entity2.
+ * Entity2 has only one Entity1. Entity2 is the owner of the relationship and stores Entity1's id on its own side.
  */
-export function OneToMany<T>(typeFunctionOrTarget: string|((type?: any) => ObjectType<T>), inverseSide: string|((object: T) => any), options?: RelationOptions): Function {
+export function OneToMany<T>(typeFunctionOrTarget: string|((type?: any) => ObjectType<T>), inverseSide: string|((object: T) => any), options?: RelationOptions): PropertyDecorator {
     return function (object: Object, propertyName: string) {
         if (!options) options = {} as RelationOptions;
 
