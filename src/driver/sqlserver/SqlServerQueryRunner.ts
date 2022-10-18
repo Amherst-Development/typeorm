@@ -218,21 +218,18 @@ export class SqlServerQueryRunner extends BaseQueryRunner
                 );
                 if (parameters && parameters.length) {
                     parameters.forEach((parameter, index) => {
+                        const parameterName = index.toString();
                         if (parameter instanceof MssqlParameter) {
                             const mssqlParameter = this.mssqlParameterToNativeParameter(
                                 parameter
                             );
                             if (mssqlParameter) {
-                                request.input(
-                                    index,
-                                    mssqlParameter,
-                                    parameter.value
-                                );
+                                request.input(parameterName, mssqlParameter, parameter.value);
                             } else {
-                                request.input(index, parameter.value);
+                                request.input(parameterName, parameter.value);
                             }
                         } else {
-                            request.input(index, parameter);
+                            request.input(parameterName, parameter);
                         }
                     });
                 }
@@ -338,14 +335,11 @@ export class SqlServerQueryRunner extends BaseQueryRunner
             request.stream = true;
             if (parameters && parameters.length) {
                 parameters.forEach((parameter, index) => {
+                    const parameterName = index.toString();
                     if (parameter instanceof MssqlParameter) {
-                        request.input(
-                            index,
-                            this.mssqlParameterToNativeParameter(parameter),
-                            parameter.value
-                        );
+                        request.input(parameterName, this.mssqlParameterToNativeParameter(parameter), parameter.value);
                     } else {
-                        request.input(index, parameter);
+                        request.input(parameterName, parameter);
                     }
                 });
             }
